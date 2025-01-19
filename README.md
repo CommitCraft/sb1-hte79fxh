@@ -1,3 +1,1 @@
-# sb1-hte79fxh
-
-[Edit in StackBlitz next generation editor ⚡️](https://stackblitz.com/~/github.com/CommitCraft/sb1-hte79fxh)
+Deploy Link https://fancy-paletas-3f9275.netlify.app/
