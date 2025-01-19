@@ -1,335 +1,399 @@
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Loader2, FileDown, Wand2, Upload, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { generateResume, generateJobDescription } from '@/lib/gemini';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import React, { useState } from 'react';
+import { FormState } from '../types';
+import { FileText, Loader, User, Briefcase, GraduationCap, Palette } from 'lucide-react';
 
-const formSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  phone: z.string().min(10, 'Phone number must be at least 10 digits'),
-  experience: z.string().min(10, 'Experience must be at least 10 characters'),
-  education: z.string().min(10, 'Education must be at least 10 characters'),
-  skills: z.string().min(5, 'Skills must be at least 5 characters'),
-  jobTitle: z.string().optional(),
-  summary: z.string().optional(),
-});
+interface ResumeFormProps {
+  onSubmit: (formData: FormState) => Promise<void>;
+  isLoading: boolean;
+}
 
-export function ResumeForm() {
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedContent, setGeneratedContent] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState('modern');
-  const { toast } = useToast();
+const templates = [
+  { id: 'modern', name: 'Modern', description: 'Clean and contemporary design with a focus on visual hierarchy' },
+  { id: 'classic', name: 'Classic', description: 'Traditional layout perfect for conventional industries' },
+  { id: 'minimal', name: 'Minimal', description: 'Simple and elegant design that lets your content shine' },
+] as const;
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    watch,
-  } = useForm({
-    resolver: zodResolver(formSchema),
+const accentColors = [
+  { id: 'blue-600', name: 'Blue', class: 'bg-blue-600' },
+  { id: 'emerald-600', name: 'Emerald', class: 'bg-emerald-600' },
+  { id: 'violet-600', name: 'Violet', class: 'bg-violet-600' },
+  { id: 'rose-600', name: 'Rose', class: 'bg-rose-600' },
+  { id: 'amber-600', name: 'Amber', class: 'bg-amber-600' },
+] as const;
+
+export default function ResumeForm({ onSubmit, isLoading }: ResumeFormProps) {
+  const [formData, setFormData] = useState<FormState>({
+    fullName: '',
+    email: '',
+    phone: '',
+    location: '',
+    linkedin: '',
+    website: '',
+    jobTitle: '',
+    yearsOfExperience: '',
+    keySkills: '',
+    previousRoles: '',
+    education: '',
+    template: 'modern',
+    accentColor: 'blue-600'
   });
 
-  const watchJobTitle = watch('jobTitle', '');
+  const [currentStep, setCurrentStep] = useState(1);
 
-  const onSubmit = async (data: z.infer<typeof formSchema>) => {
-    try {
-      setIsGenerating(true);
-      
-      let jobDescription = '';
-      if (data.jobTitle) {
-        jobDescription = await generateJobDescription(data.jobTitle, '5');
-      }
-
-      const prompt = `
-        Create a professional resume in ${selectedTemplate} style for:
-        Name: ${data.fullName}
-        Email: ${data.email}
-        Phone: ${data.phone}
-        Job Title: ${data.jobTitle || 'Professional'}
-        Summary: ${data.summary || ''}
-        Experience: ${data.experience}
-        Education: ${data.education}
-        Skills: ${data.skills}
-        ${jobDescription ? `Relevant Job Description: ${jobDescription}` : ''}
-        
-        Format the resume with the following requirements:
-        1. Use clean, professional formatting
-        2. Add appropriate spacing between sections
-        3. Use semantic HTML with proper heading levels
-        4. Include Font Awesome icons for section headers
-        5. Style it according to the selected template (${selectedTemplate})
-        6. Make it printer-friendly
-        7. Ensure all text is properly aligned
-        8. Add subtle visual hierarchy
-        
-        Return the resume as properly formatted HTML with embedded CSS for printing.
-      `;
-
-      const content = await generateResume(prompt);
-      const enhancedContent = `
-        <style>
-          @media print {
-            body {
-              font-family: 'Arial', sans-serif;
-              line-height: 1.6;
-              color: #000;
-              margin: 0;
-              padding: 20px;
-            }
-            h1 { font-size: 24px; color: #2c3e50; margin-bottom: 10px; }
-            h2 { font-size: 20px; color: #34495e; margin-top: 20px; }
-            h3 { font-size: 16px; color: #2c3e50; }
-            .section { margin-bottom: 20px; }
-            .contact-info { color: #666; margin-bottom: 15px; }
-            .experience-item { margin-bottom: 15px; }
-            .skills-list { columns: 2; column-gap: 20px; }
-            .page-break { page-break-before: always; }
-            a { color: #2c3e50; text-decoration: none; }
-          }
-        </style>
-        ${content}
-      `;
-      setGeneratedContent(enhancedContent);
-      toast({
-        title: 'Resume generated successfully!',
-        description: 'Your resume is ready to download.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Error generating resume',
-        description: 'Please try again later.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsGenerating(false);
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await onSubmit(formData);
   };
 
-  const downloadPDF = async () => {
-    const element = document.getElementById('resume-content');
-    if (!element) return;
-
-    try {
-      toast({
-        title: 'Preparing download...',
-        description: 'Your PDF is being generated.',
-      });
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-      
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${watch('fullName')}-resume.pdf`);
-
-      toast({
-        title: 'Download complete!',
-        description: 'Your resume has been saved as a PDF.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Error downloading PDF',
-        description: 'Please try again.',
-        variant: 'destructive',
-      });
-    }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
+
+  const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, 4));
+  const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
 
   return (
-    <div className="space-y-8">
-      <Tabs defaultValue="form" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="form">Edit Resume</TabsTrigger>
-          <TabsTrigger value="preview">Preview & Download</TabsTrigger>
-        </TabsList>
+    <form onSubmit={handleSubmit} className="space-y-8">
+      {/* Progress bar */}
+      <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+          style={{ width: `${(currentStep / 4) * 100}%` }}
+        ></div>
+      </div>
 
-        <TabsContent value="form">
-          <Card className="p-6">
-            <div className="mb-6">
-              <Label>Template Style</Label>
-              <Select
-                value={selectedTemplate}
-                onValueChange={setSelectedTemplate}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="modern">Modern</SelectItem>
-                  <SelectItem value="professional">Professional</SelectItem>
-                  <SelectItem value="creative">Creative</SelectItem>
-                  <SelectItem value="minimal">Minimal</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* Step indicators */}
+      <div className="flex justify-between mb-8">
+        {['Personal Info', 'Experience', 'Customization', 'Review'].map((step, index) => (
+          <button
+            key={step}
+            type="button"
+            onClick={() => setCurrentStep(index + 1)}
+            className={`flex flex-col items-center space-y-2 ${
+              currentStep >= index + 1 ? 'text-blue-600' : 'text-gray-400'
+            }`}
+          >
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+              currentStep >= index + 1 ? 'border-blue-600 bg-blue-50' : 'border-gray-300'
+            }`}>
+              {index + 1}
             </div>
+            <span className="text-xs font-medium">{step}</span>
+          </button>
+        ))}
+      </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input {...register('fullName')} className="mt-1" />
-                  {errors.fullName && (
-                    <p className="text-sm text-red-500 mt-1">{errors.fullName.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="jobTitle">Desired Job Title</Label>
-                  <Input {...register('jobTitle')} className="mt-1" />
-                </div>
-
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input {...register('email')} type="email" className="mt-1" />
-                  {errors.email && (
-                    <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input {...register('phone')} className="mt-1" />
-                  {errors.phone && (
-                    <p className="text-sm text-red-500 mt-1">{errors.phone.message}</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="summary">Professional Summary</Label>
-                <Textarea
-                  {...register('summary')}
-                  className="mt-1"
-                  placeholder="Brief overview of your professional background and career goals"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="experience">Professional Experience</Label>
-                <Textarea
-                  {...register('experience')}
-                  className="mt-1"
-                  placeholder="List your work experience with company names, dates, and key achievements"
-                />
-                {errors.experience && (
-                  <p className="text-sm text-red-500 mt-1">{errors.experience.message}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="education">Education</Label>
-                <Textarea
-                  {...register('education')}
-                  className="mt-1"
-                  placeholder="List your educational background with institutions, degrees, and dates"
-                />
-                {errors.education && (
-                  <p className="text-sm text-red-500 mt-1">{errors.education.message}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="skills">Skills</Label>
-                <Textarea
-                  {...register('skills')}
-                  className="mt-1"
-                  placeholder="List your technical and soft skills"
-                />
-                {errors.skills && (
-                  <p className="text-sm text-red-500 mt-1">{errors.skills.message}</p>
-                )}
-              </div>
-
-              <div className="flex justify-end space-x-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setGeneratedContent('');
-                    document.forms[0].reset();
-                  }}
-                >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Reset
-                </Button>
-                <Button type="submit" disabled={isGenerating}>
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="mr-2 h-4 w-4" />
-                      Generate Resume
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="preview">
-          <Card className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Resume Preview</h2>
-              {generatedContent && (
-                <div className="flex space-x-4">
-                  <Button onClick={downloadPDF} variant="outline">
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Download PDF
-                  </Button>
-                  <Button onClick={() => window.print()}>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Print Resume
-                  </Button>
-                </div>
-              )}
+      {/* Step 1: Personal Information */}
+      {currentStep === 1 && (
+        <div className="space-y-6">
+          <div className="flex items-center space-x-2 text-lg font-semibold text-gray-700 mb-4">
+            <User className="w-5 h-5" />
+            <h2>Personal Information</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
+                Full Name
+              </label>
+              <input
+                type="text"
+                id="fullName"
+                name="fullName"
+                value={formData.fullName}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                required
+              />
             </div>
-            <div
-              id="resume-content"
-              className="prose prose-sm md:prose-base lg:prose-lg dark:prose-invert max-w-none p-8 bg-white dark:bg-gray-900 rounded-lg shadow-sm min-h-[500px] print:shadow-none print:p-0 print:dark:bg-white print:dark:text-black"
-              dangerouslySetInnerHTML={{ __html: generatedContent || '<p class="text-center text-muted-foreground">Generate your resume to see the preview here</p>' }}
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Email
+              </label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
+                Phone
+              </label>
+              <input
+                type="tel"
+                id="phone"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="location" className="block text-sm font-medium text-gray-700">
+                Location
+              </label>
+              <input
+                type="text"
+                id="location"
+                name="location"
+                value={formData.location}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="City, Country"
+              />
+            </div>
+            <div>
+              <label htmlFor="linkedin" className="block text-sm font-medium text-gray-700">
+                LinkedIn Profile
+              </label>
+              <input
+                type="url"
+                id="linkedin"
+                name="linkedin"
+                value={formData.linkedin}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="https://linkedin.com/in/username"
+              />
+            </div>
+            <div>
+              <label htmlFor="website" className="block text-sm font-medium text-gray-700">
+                Personal Website
+              </label>
+              <input
+                type="url"
+                id="website"
+                name="website"
+                value={formData.website}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                placeholder="https://yourwebsite.com"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Experience */}
+      {currentStep === 2 && (
+        <div className="space-y-6">
+          <div className="flex items-center space-x-2 text-lg font-semibold text-gray-700 mb-4">
+            <Briefcase className="w-5 h-5" />
+            <h2>Professional Experience</h2>
+          </div>
+          <div>
+            <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700">
+              Desired Job Title
+            </label>
+            <input
+              type="text"
+              id="jobTitle"
+              name="jobTitle"
+              value={formData.jobTitle}
+              onChange={handleChange}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              required
             />
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+          </div>
+
+          <div>
+            <label htmlFor="yearsOfExperience" className="block text-sm font-medium text-gray-700">
+              Years of Experience
+            </label>
+            <input
+              type="text"
+              id="yearsOfExperience"
+              name="yearsOfExperience"
+              value={formData.yearsOfExperience}
+              onChange={handleChange}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="keySkills" className="block text-sm font-medium text-gray-700">
+              Key Skills (comma separated)
+            </label>
+            <textarea
+              id="keySkills"
+              name="keySkills"
+              value={formData.keySkills}
+              onChange={handleChange}
+              rows={3}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="previousRoles" className="block text-sm font-medium text-gray-700">
+              Previous Roles and Responsibilities
+            </label>
+            <textarea
+              id="previousRoles"
+              name="previousRoles"
+              value={formData.previousRoles}
+              onChange={handleChange}
+              rows={4}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="education" className="block text-sm font-medium text-gray-700">
+              Education Background
+            </label>
+            <textarea
+              id="education"
+              name="education"
+              value={formData.education}
+              onChange={handleChange}
+              rows={3}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              required
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Customization */}
+      {currentStep === 3 && (
+        <div className="space-y-6">
+          <div className="flex items-center space-x-2 text-lg font-semibold text-gray-700 mb-4">
+            <Palette className="w-5 h-5" />
+            <h2>Customize Your Resume</h2>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-4">
+              Choose a Template
+            </label>
+            <div className="grid grid-cols-3 gap-4">
+              {templates.map((template) => (
+                <div
+                  key={template.id}
+                  className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                    formData.template === template.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-blue-200'
+                  }`}
+                  onClick={() => handleChange({ target: { name: 'template', value: template.id } } as any)}
+                >
+                  <h3 className="font-medium text-gray-900">{template.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-4">
+              Choose an Accent Color
+            </label>
+            <div className="flex space-x-4">
+              {accentColors.map((color) => (
+                <button
+                  key={color.id}
+                  type="button"
+                  className={`w-8 h-8 rounded-full ${color.class} ${
+                    formData.accentColor === color.id
+                      ? 'ring-2 ring-offset-2 ring-blue-500'
+                      : ''
+                  }`}
+                  onClick={() => handleChange({ target: { name: 'accentColor', value: color.id } } as any)}
+                  title={color.name}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Review */}
+      {currentStep === 4 && (
+        <div className="space-y-6">
+          <div className="flex items-center space-x-2 text-lg font-semibold text-gray-700 mb-4">
+            <FileText className="w-5 h-5" />
+            <h2>Review Your Information</h2>
+          </div>
+          
+          <div className="bg-gray-50 p-6 rounded-lg space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-500">Personal Information</h3>
+                <p className="mt-1">{formData.fullName}</p>
+                <p className="text-sm text-gray-600">{formData.email}</p>
+                <p className="text-sm text-gray-600">{formData.phone}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-500">Professional</h3>
+                <p className="mt-1">{formData.jobTitle}</p>
+                <p className="text-sm text-gray-600">{formData.yearsOfExperience} years of experience</p>
+              </div>
+            </div>
+            
+            <div>
+              <h3 className="text-sm font-medium text-gray-500">Skills</h3>
+              <p className="mt-1 text-sm text-gray-600">{formData.keySkills}</p>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium text-gray-500">Template</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                {templates.find(t => t.id === formData.template)?.name}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between pt-6">
+        {currentStep > 1 && (
+          <button
+            type="button"
+            onClick={prevStep}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Previous
+          </button>
+        )}
+        
+        {currentStep < 4 ? (
+          <button
+            type="button"
+            onClick={nextStep}
+            className="ml-auto inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Next
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="ml-auto inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300"
+          >
+            {isLoading ? (
+              <>
+                <Loader className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                Generating Resume...
+              </>
+            ) : (
+              <>
+                <FileText className="-ml-1 mr-2 h-4 w-4" />
+                Generate Resume
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
